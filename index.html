@@ -4,12 +4,56 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lorin Timeline</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
+
 <body>
 
 <h1>Lorin Timeline</h1>
 
-<p>Таймлайн Дурина и Лоэна</p>
+<div id="timeline">Загрузка...</div>
+
+<script>
+const SUPABASE_URL = 'https://hbtbiubrweaouonsvyzd.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_4V_r__hBqiFfF31cJoQxOA_7I2UDG3u';
+
+const supabase = window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_KEY
+);
+
+async function loadTimeline() {
+    const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .order('position', { ascending: true });
+
+    if (error) {
+        console.error(error);
+        document.getElementById('timeline').textContent =
+            'Ошибка загрузки: ' + error.message;
+        return;
+    }
+
+    const timeline = document.getElementById('timeline');
+
+    if (!data.length) {
+        timeline.textContent = 'Событий пока нет.';
+        return;
+    }
+
+    timeline.innerHTML = data.map(event => `
+        <article>
+            <h2>${event.title}</h2>
+            <div>${event.date_text}</div>
+            <p>${event.description}</p>
+        </article>
+    `).join('');
+}
+
+loadTimeline();
+</script>
 
 </body>
 </html>
