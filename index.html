@@ -18,14 +18,14 @@
 const SUPABASE_URL = 'https://hbtbiubrweaouonsvyzd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_4V_r__hBqiFfF31cJoQxOA_7I2UDG3u';
 
-const supabase = window.supabase.createClient(
+const supabaseClient = window.supabase.createClient(
     SUPABASE_URL,
     SUPABASE_KEY
 );
 
 async function loadTimeline() {
-    const { data, error } = await supabase
-        .from('events')
+    const { data, error } = await supabaseClient
+    .from('events')
         .select('*')
         .order('position', { ascending: true });
 
