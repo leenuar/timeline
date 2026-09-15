@@ -3,57 +3,782 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lorin Timeline</title>
-
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <title>Lorin timeline</title>
+    <link href="https://necolas.github.io/normalize.css/8.0.1/normalize.css" rel="stylesheet" type="text/css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet" type="text/css">
+    <link href="./style.css" rel="stylesheet" type="text/css">
 </head>
-
 <body>
+<div id="timeline__main">
+    <div id="header">
+        <div id="nav">
+            <ul id="filters"></ul>
+            <button class="remove_filters" type="button"><i class="fa-solid fa-close"></i> Отключить все фильтры</button>
+        </div>
+        <div class="header-actions">
+            <button class="add_new_event editor-only" type="button"><i class="fa-solid fa-plus"></i> Добавить новое событие</button>
+            <button class="login-button" type="button"><i class="fa-solid fa-right-to-bracket"></i><span>Войти</span></button>
+        </div>
+    </div>
 
-<h1>Lorin Timeline</h1>
+    <div id="content"><div class="loading">Загрузка...</div></div>
+</div>
 
-<div id="timeline">Загрузка...</div>
+<div id="modal_wrapper" aria-hidden="true">
+    <div class="modal_inner">
+        <div class="modal-top">
+            <h2 id="event-modal-title">Новое событие</h2>
+            <button class="modal-close" type="button" aria-label="Закрыть"><i class="fa-solid fa-close"></i></button>
+        </div>
 
+        <form id="event-form">
+            <div class="add_event_header">
+                <div class="add_event--item position-item">
+                    <label for="position-input">№</label>
+                    <input type="number" id="position-input" min="0" step="1" placeholder="конец">
+                    <small>позиция</small>
+                </div>
+                <div class="add_event--item date-item">
+                    <label for="date-input">Дата</label>
+                    <input type="text" id="date-input" placeholder="Дата события" required>
+                </div>
+                <div class="add_event--item title-item">
+                    <label for="title-input">Заголовок</label>
+                    <input type="text" id="title-input" placeholder="То, что рядом с датой" required>
+                </div>
+            </div>
+
+            <div class="add_event_body">
+                <div class="add_event--item">
+                    <label for="description-input">Описание</label>
+                    <textarea id="description-input" placeholder="Короткое описание"></textarea>
+                </div>
+
+                <div class="add_event--item">
+                    <label for="tag-input">Теги</label>
+                    <div class="add_tags-section">
+                        <div id="selected-tags" class="add_tags--list"></div>
+                        <input type="text" id="tag-input" autocomplete="off" placeholder="Начните вводить тег">
+                        <div id="tag-suggestions" class="tag-suggestions"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="add_event_buttons">
+                <button class="close_event" type="button"><i class="fa-solid fa-close"></i> Галя, отмена!</button>
+                <button class="save_event" type="submit"><i class="fa-solid fa-check"></i> Сохранить</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="login_wrapper" aria-hidden="true">
+    <div class="login_inner">
+        <div class="modal-top">
+            <h2>Вход редактора</h2>
+            <button class="modal-close" type="button" aria-label="Закрыть"><i class="fa-solid fa-close"></i></button>
+        </div>
+        <form id="login-form">
+            <div class="add_event--item">
+                <label for="email-input">Email</label>
+                <input type="email" id="email-input" autocomplete="username" required>
+            </div>
+            <div class="add_event--item">
+                <label for="password-input">Пароль</label>
+                <input type="password" id="password-input" autocomplete="current-password" required>
+            </div>
+            <div class="add_event_buttons">
+                <button class="close_event" type="button">Отмена</button>
+                <button class="save_event" type="submit">Войти</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL = 'https://hbtbiubrweaouonsvyzd.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_4V_r__hBqiFfF31cJoQxOA_7I2UDG3u';
+const EDITOR_ID = '56016880-7cbe-4527-8ece-41ad2dd26da0';
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const supabaseClient = window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_KEY
-);
+const BASE_FILTERS = [
+    'Общее', 'Дурин', 'Лоэн', 'Боль', 'А потом они потрахались',
+    'Семейное', 'Ванилька', 'Сяо', 'Альбедо', 'Странник',
+    'Монд', 'Ли Юэ', 'Нод-Край'
+];
 
-async function loadTimeline() {
+let events = [];
+let tags = [];
+let activeFilters = [];
+let currentUser = null;
+let editingEvent = null;
+let selectedTagNames = [];
+let draggedId = null;
+
+const $ = (selector) => document.querySelector(selector);
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function normalizeTagInput(value) {
+    return String(value ?? '').trim().replace(/^#+/, '').trim();
+}
+
+function sameTag(a, b) {
+    return String(a).localeCompare(String(b), 'ru', { sensitivity: 'accent' }) === 0;
+}
+
+function isEditor() {
+    return Boolean(currentUser && currentUser.id === EDITOR_ID);
+}
+
+function isAllTimelineView() {
+    return activeFilters.length === 0;
+}
+
+function showToast(text) {
+    const toast = $('#toast');
+    toast.textContent = text;
+    toast.classList.add('show');
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => toast.classList.remove('show'), 2800);
+}
+
+function openOverlay(element) {
+    element.classList.add('is-open');
+    element.setAttribute('aria-hidden', 'false');
+}
+
+function closeOverlay(element) {
+    element.classList.remove('is-open');
+    element.setAttribute('aria-hidden', 'true');
+}
+
+function closeAllOverlays() {
+    closeOverlay($('#modal_wrapper'));
+    closeOverlay($('#login_wrapper'));
+}
+
+function allKnownTagNames() {
+    const result = [];
+    [...BASE_FILTERS, ...tags.map((tag) => tag.name)].forEach((name) => {
+        if (!result.some((saved) => sameTag(saved, name))) result.push(name);
+    });
+    return result;
+}
+
+function renderFilters() {
+    const filters = $('#filters');
+    filters.innerHTML = '';
+
+    const all = document.createElement('li');
+    all.className = `filter_tag${isAllTimelineView() ? ' active' : ''}`;
+    all.dataset.filter = '__all__';
+    all.textContent = 'вся хронология';
+    all.addEventListener('click', () => {
+        activeFilters = [];
+        renderFilters();
+        renderEvents();
+    });
+    filters.appendChild(all);
+
+    allKnownTagNames().forEach((name) => {
+        const item = document.createElement('li');
+        const active = activeFilters.some((filter) => sameTag(filter, name));
+        item.className = `filter_tag${active ? ' active' : ''}`;
+        item.dataset.filter = name;
+        item.textContent = name.toLowerCase();
+        item.addEventListener('click', () => {
+            if (activeFilters.some((filter) => sameTag(filter, name))) {
+                activeFilters = activeFilters.filter((filter) => !sameTag(filter, name));
+            } else {
+                activeFilters.push(name);
+            }
+            renderFilters();
+            renderEvents();
+        });
+        filters.appendChild(item);
+    });
+}
+
+function getFilteredEvents() {
+    if (isAllTimelineView()) return events;
+
+    return events.filter((event) => {
+        const eventTagNames = (event.event_tags || []).map((item) => item.tags?.name).filter(Boolean);
+        return activeFilters.every((filter) => eventTagNames.some((name) => sameTag(name, filter)));
+    });
+}
+
+function renderEvents() {
+    const content = $('#content');
+    const visibleEvents = getFilteredEvents();
+    content.innerHTML = '';
+
+    if (!visibleEvents.length) {
+        content.innerHTML = '<div class="empty">Здесь пока ничего нет.</div>';
+        return;
+    }
+
+    visibleEvents.forEach((event) => {
+        const card = document.createElement('div');
+        card.className = 'container';
+        card.dataset.id = event.id;
+
+        const tagNames = (event.event_tags || []).map((item) => item.tags?.name).filter(Boolean);
+
+        card.innerHTML = `
+            <div class="container-position">${escapeHtml(event.position)}</div>
+            <div class="container-head">
+                <span class="container-date">${escapeHtml(event.date_text)}</span>
+                <span class="container-title">${escapeHtml(event.title)}</span>
+            </div>
+            <div class="container-desc">${escapeHtml(event.description || '').replace(/\n/g, '<br>')}</div>
+            <div class="container-tags">${tagNames.map((name) => `<em>#${escapeHtml(name.toLowerCase())}</em>`).join('')}</div>
+            ${isEditor() ? `
+                <div class="container-operation">
+                    <button class="edit_event" type="button" title="Редактировать" aria-label="Редактировать"><i class="fa-solid fa-pen"></i></button>
+                    <button class="delete_event" type="button" title="Удалить" aria-label="Удалить"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+            ` : ''}
+        `;
+
+        if (isEditor() && isAllTimelineView()) {
+            card.draggable = true;
+
+            card.addEventListener('dragstart', (e) => {
+                draggedId = event.id;
+                card.classList.add('dragging');
+                if (e.dataTransfer) {
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', String(event.id));
+                }
+            });
+
+            card.addEventListener('dragend', () => {
+                draggedId = null;
+                card.classList.remove('dragging');
+                document.querySelectorAll('.container').forEach((item) => item.classList.remove('drag-over'));
+            });
+
+            card.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                if (draggedId !== event.id) card.classList.add('drag-over');
+            });
+
+            card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+
+            card.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                card.classList.remove('drag-over');
+                if (draggedId && draggedId !== event.id) await reorderByDrop(draggedId, event.id);
+            });
+        }
+
+        const editButton = card.querySelector('.edit_event');
+        if (editButton) editButton.addEventListener('click', () => openEventModal(event));
+
+        const deleteButton = card.querySelector('.delete_event');
+        if (deleteButton) deleteButton.addEventListener('click', () => deleteEvent(event));
+
+        content.appendChild(card);
+    });
+}
+
+async function loadTags() {
+    const { data, error } = await supabaseClient.from('tags').select('*').order('name');
+    if (error) {
+        console.error(error);
+        showToast('Не удалось загрузить теги.');
+        return;
+    }
+    tags = data || [];
+    renderFilters();
+}
+
+async function loadEvents() {
     const { data, error } = await supabaseClient
-    .from('events')
-        .select('*')
-        .order('position', { ascending: true });
+        .from('events')
+        .select(`
+            id,
+            date_text,
+            title,
+            description,
+            position,
+            created_at,
+            event_tags (
+                tags (
+                    id,
+                    name
+                )
+            )
+        `)
+        .order('position', { ascending: true })
+        .order('id', { ascending: true });
 
     if (error) {
         console.error(error);
-        document.getElementById('timeline').textContent =
-            'Ошибка загрузки: ' + error.message;
+        $('#content').innerHTML = '<div class="empty">Не удалось загрузить события.</div>';
+        showToast(error.message);
         return;
     }
 
-    const timeline = document.getElementById('timeline');
-
-    if (!data.length) {
-        timeline.textContent = 'Событий пока нет.';
-        return;
-    }
-
-    timeline.innerHTML = data.map(event => `
-        <article>
-            <h2>${event.title}</h2>
-            <div>${event.date_text}</div>
-            <p>${event.description}</p>
-        </article>
-    `).join('');
+    events = data || [];
+    renderEvents();
 }
 
-loadTimeline();
-</script>
+function getEndPosition() {
+    if (!events.length) return 0;
+    return Math.max(...events.map((event) => Number(event.position) || 0)) + 1;
+}
 
+function getLastExistingPosition() {
+    if (!events.length) return 0;
+    return Math.max(...events.map((event) => Number(event.position) || 0));
+}
+
+async function updatePosition(id, position) {
+    const { error } = await supabaseClient.from('events').update({ position }).eq('id', id);
+    if (error) throw error;
+}
+
+async function getPositionForNewEvent(rawPosition) {
+    const end = getEndPosition();
+    if (rawPosition === '') return end;
+
+    let position = Number(rawPosition);
+    if (!Number.isInteger(position) || position < 0) throw new Error('Позиция должна быть целым числом от 0.');
+
+    if (position >= end) return end;
+
+    const affected = [...events]
+        .filter((event) => Number(event.position) >= position)
+        .sort((a, b) => Number(b.position) - Number(a.position));
+
+    for (const event of affected) {
+        await updatePosition(event.id, Number(event.position) + 1);
+    }
+
+    return position;
+}
+
+async function moveEditedEvent(event, rawPosition) {
+    const oldPosition = Number(event.position);
+    if (rawPosition === '') return oldPosition;
+
+    let newPosition = Number(rawPosition);
+    if (!Number.isInteger(newPosition) || newPosition < 0) throw new Error('Позиция должна быть целым числом от 0.');
+
+    const lastPosition = getLastExistingPosition();
+    if (newPosition > lastPosition) newPosition = lastPosition;
+    if (newPosition === oldPosition) return oldPosition;
+
+    if (newPosition < oldPosition) {
+        const affected = [...events]
+            .filter((item) => item.id !== event.id && Number(item.position) >= newPosition && Number(item.position) < oldPosition)
+            .sort((a, b) => Number(b.position) - Number(a.position));
+
+        for (const item of affected) await updatePosition(item.id, Number(item.position) + 1);
+    } else {
+        const affected = [...events]
+            .filter((item) => item.id !== event.id && Number(item.position) > oldPosition && Number(item.position) <= newPosition)
+            .sort((a, b) => Number(a.position) - Number(b.position));
+
+        for (const item of affected) await updatePosition(item.id, Number(item.position) - 1);
+    }
+
+    return newPosition;
+}
+
+function openEventModal(event = null) {
+    editingEvent = event;
+    $('#event-modal-title').textContent = event ? 'Редактирование события' : 'Новое событие';
+    $('#position-input').value = event ? event.position : '';
+    $('#date-input').value = event?.date_text || '';
+    $('#title-input').value = event?.title || '';
+    $('#description-input').value = event?.description || '';
+    $('#tag-input').value = '';
+
+    selectedTagNames = (event?.event_tags || []).map((item) => item.tags?.name).filter(Boolean);
+    renderSelectedTags();
+    hideSuggestions();
+    openOverlay($('#modal_wrapper'));
+    setTimeout(() => $('#date-input').focus(), 50);
+}
+
+function renderSelectedTags() {
+    const list = $('#selected-tags');
+    list.innerHTML = '';
+
+    if (!selectedTagNames.length) {
+        list.classList.add('is-empty');
+        return;
+    }
+
+    list.classList.remove('is-empty');
+
+    selectedTagNames.forEach((name) => {
+        const tag = document.createElement('span');
+        tag.className = 'selected-tag';
+        tag.innerHTML = `<span>#${escapeHtml(name.toLowerCase())}</span><button type="button" aria-label="Удалить тег" title="Удалить тег">×</button>`;
+        tag.querySelector('button').addEventListener('click', () => {
+            selectedTagNames = selectedTagNames.filter((savedName) => !sameTag(savedName, name));
+            renderSelectedTags();
+            showSuggestions();
+        });
+        list.appendChild(tag);
+    });
+}
+
+function showSuggestions() {
+    const input = $('#tag-input');
+    const box = $('#tag-suggestions');
+    const query = normalizeTagInput(input.value).toLowerCase();
+
+    const available = allKnownTagNames().filter((name) => !selectedTagNames.some((selected) => sameTag(selected, name)));
+
+    const matches = available
+        .filter((name) => !query || name.toLowerCase().includes(query))
+        .sort((a, b) => {
+            const aStarts = a.toLowerCase().startsWith(query);
+            const bStarts = b.toLowerCase().startsWith(query);
+            if (aStarts !== bStarts) return aStarts ? -1 : 1;
+            return a.localeCompare(b, 'ru');
+        });
+
+    box.innerHTML = '';
+
+    matches.forEach((name) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'tag-suggestion';
+        button.textContent = `#${name.toLowerCase()}`;
+        button.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            addSelectedTag(name);
+        });
+        box.appendChild(button);
+    });
+
+    if (query) {
+        const exactExists = allKnownTagNames().some((name) => sameTag(name, query));
+        const alreadySelected = selectedTagNames.some((name) => sameTag(name, query));
+
+        if (!exactExists && !alreadySelected) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'tag-suggestion create-tag';
+            button.textContent = `создать #${query}`;
+            button.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                addSelectedTag(query);
+            });
+            box.appendChild(button);
+        }
+    }
+
+    box.classList.toggle('is-visible', box.children.length > 0);
+}
+
+function hideSuggestions() {
+    $('#tag-suggestions').classList.remove('is-visible');
+}
+
+function addSelectedTag(rawName) {
+    const name = normalizeTagInput(rawName);
+    if (!name) return;
+
+    const knownName = allKnownTagNames().find((item) => sameTag(item, name));
+    const finalName = knownName || name;
+
+    if (!selectedTagNames.some((item) => sameTag(item, finalName))) selectedTagNames.push(finalName);
+
+    $('#tag-input').value = '';
+    renderSelectedTags();
+    hideSuggestions();
+}
+
+async function ensureTags(names) {
+    const result = [];
+
+    for (const rawName of names) {
+        const name = normalizeTagInput(rawName);
+        let existing = tags.find((tag) => sameTag(tag.name, name));
+
+        if (!existing) {
+            const { data, error } = await supabaseClient.from('tags').insert({ name }).select().single();
+
+            if (error) {
+                if (error.code === '23505') {
+                    const { data: found, error: findError } = await supabaseClient
+                        .from('tags')
+                        .select('*')
+                        .ilike('name', name)
+                        .limit(1)
+                        .maybeSingle();
+                    if (findError) throw findError;
+                    existing = found;
+                } else {
+                    throw error;
+                }
+            } else {
+                existing = data;
+            }
+
+            if (existing) tags.push(existing);
+        }
+
+        if (existing) result.push(existing);
+    }
+
+    return result;
+}
+
+async function saveEvent(e) {
+    e.preventDefault();
+    if (!isEditor()) return;
+
+    const saveButton = $('#event-form .save_event');
+    const originalSaveHtml = saveButton.innerHTML;
+    const positionRaw = $('#position-input').value.trim();
+    const dateText = $('#date-input').value.trim();
+    const title = $('#title-input').value.trim();
+    const description = $('#description-input').value;
+
+    if (!dateText || !title) {
+        showToast('Заполни дату и заголовок.');
+        return;
+    }
+
+    saveButton.disabled = true;
+    saveButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Сохраняю';
+
+    try {
+        let eventId;
+
+        if (editingEvent) {
+            const position = await moveEditedEvent(editingEvent, positionRaw);
+
+            const { error } = await supabaseClient.from('events').update({
+                date_text: dateText,
+                title,
+                description,
+                position
+            }).eq('id', editingEvent.id);
+
+            if (error) throw error;
+            eventId = editingEvent.id;
+        } else {
+            const position = await getPositionForNewEvent(positionRaw);
+
+            const { data, error } = await supabaseClient.from('events').insert({
+                date_text: dateText,
+                title,
+                description,
+                position
+            }).select().single();
+
+            if (error) throw error;
+            eventId = data.id;
+        }
+
+        if (editingEvent) {
+            const { error } = await supabaseClient.from('event_tags').delete().eq('event_id', eventId);
+            if (error) throw error;
+        }
+
+        const databaseTags = await ensureTags(selectedTagNames);
+
+        if (databaseTags.length) {
+            const rows = databaseTags.map((tag) => ({ event_id: eventId, tag_id: tag.id }));
+            const { error } = await supabaseClient.from('event_tags').insert(rows);
+            if (error) throw error;
+        }
+
+        const wasEditing = Boolean(editingEvent);
+        closeOverlay($('#modal_wrapper'));
+        editingEvent = null;
+
+        await loadTags();
+        await loadEvents();
+
+        showToast(wasEditing ? 'Событие сохранено.' : 'Событие добавлено.');
+    } catch (error) {
+        console.error(error);
+        showToast(error.message || 'Не удалось сохранить событие.');
+        await loadEvents();
+    } finally {
+        saveButton.disabled = false;
+        saveButton.innerHTML = originalSaveHtml;
+    }
+}
+
+async function deleteEvent(event) {
+    if (!isEditor()) return;
+    if (!confirm(`Удалить «${event.title}»?`)) return;
+
+    try {
+        const deletedPosition = Number(event.position);
+        const { error } = await supabaseClient.from('events').delete().eq('id', event.id);
+        if (error) throw error;
+
+        const affected = [...events]
+            .filter((item) => item.id !== event.id && Number(item.position) > deletedPosition)
+            .sort((a, b) => Number(a.position) - Number(b.position));
+
+        for (const item of affected) await updatePosition(item.id, Number(item.position) - 1);
+
+        await loadEvents();
+        showToast('Событие удалено.');
+    } catch (error) {
+        console.error(error);
+        showToast(error.message || 'Не удалось удалить событие.');
+        await loadEvents();
+    }
+}
+
+async function reorderByDrop(draggedEventId, targetEventId) {
+    if (!isEditor() || !isAllTimelineView()) return;
+
+    const ordered = [...events].sort((a, b) => {
+        const byPosition = Number(a.position) - Number(b.position);
+        return byPosition !== 0 ? byPosition : Number(a.id) - Number(b.id);
+    });
+
+    const fromIndex = ordered.findIndex((event) => event.id === draggedEventId);
+    const toIndex = ordered.findIndex((event) => event.id === targetEventId);
+    if (fromIndex < 0 || toIndex < 0) return;
+
+    const [moved] = ordered.splice(fromIndex, 1);
+    ordered.splice(toIndex, 0, moved);
+
+    try {
+        for (let index = 0; index < ordered.length; index++) {
+            if (Number(ordered[index].position) !== index) await updatePosition(ordered[index].id, index);
+        }
+        await loadEvents();
+        showToast('Порядок сохранён.');
+    } catch (error) {
+        console.error(error);
+        showToast(error.message || 'Не удалось изменить порядок.');
+        await loadEvents();
+    }
+}
+
+async function refreshAuth() {
+    const { data, error } = await supabaseClient.auth.getUser();
+    if (error) console.error(error);
+
+    currentUser = data?.user || null;
+    document.body.classList.toggle('is-editor', isEditor());
+
+    const button = $('.login-button');
+    const icon = button.querySelector('i');
+    const text = button.querySelector('span');
+
+    if (currentUser) {
+        icon.className = 'fa-solid fa-right-from-bracket';
+        text.textContent = 'Выйти';
+    } else {
+        icon.className = 'fa-solid fa-right-to-bracket';
+        text.textContent = 'Войти';
+    }
+
+    renderEvents();
+}
+
+$('#event-form').addEventListener('submit', saveEvent);
+
+$('#login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = $('#email-input').value.trim();
+    const password = $('#password-input').value;
+
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) {
+        showToast(error.message);
+        return;
+    }
+
+    closeOverlay($('#login_wrapper'));
+    $('#password-input').value = '';
+    await refreshAuth();
+    showToast('Вход выполнен.');
+});
+
+$('.login-button').addEventListener('click', async () => {
+    if (currentUser) {
+        await supabaseClient.auth.signOut();
+        await refreshAuth();
+        showToast('Вы вышли.');
+    } else {
+        openOverlay($('#login_wrapper'));
+        setTimeout(() => $('#email-input').focus(), 50);
+    }
+});
+
+$('.add_new_event').addEventListener('click', () => openEventModal());
+
+document.querySelectorAll('.modal-close, .close_event').forEach((button) => {
+    button.addEventListener('click', () => {
+        const wrapper = button.closest('#modal_wrapper, #login_wrapper');
+        if (wrapper) closeOverlay(wrapper);
+    });
+});
+
+document.querySelectorAll('#modal_wrapper, #login_wrapper').forEach((wrapper) => {
+    wrapper.addEventListener('click', (e) => {
+        if (e.target === wrapper) closeOverlay(wrapper);
+    });
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeAllOverlays();
+        hideSuggestions();
+    }
+});
+
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.add_tags-section')) hideSuggestions();
+});
+
+$('.remove_filters').addEventListener('click', () => {
+    activeFilters = [];
+    renderFilters();
+    renderEvents();
+});
+
+$('#tag-input').addEventListener('focus', showSuggestions);
+$('#tag-input').addEventListener('input', showSuggestions);
+$('#tag-input').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ',') return;
+    const value = normalizeTagInput($('#tag-input').value);
+    if (!value) return;
+
+    e.preventDefault();
+    const knownName = allKnownTagNames().find((name) => sameTag(name, value));
+    addSelectedTag(knownName || value);
+});
+
+(async function init() {
+    await refreshAuth();
+    await loadTags();
+    await loadEvents();
+
+    supabaseClient.auth.onAuthStateChange(async () => {
+        await refreshAuth();
+    });
+})();
+</script>
 </body>
 </html>
