@@ -13,7 +13,23 @@
     <div id="header">
         <div id="nav">
             <ul id="filters"></ul>
-            <button class="remove_filters" type="button"><i class="fa-solid fa-close"></i> Отключить все фильтры</button>
+
+            <div class="filter-actions">
+                <button class="remove_filters" type="button">
+                    <i class="fa-solid fa-close"></i>
+                    Отключить все фильтры
+                </button>
+
+                <button class="edit_filters editor-only" type="button">
+                    <i class="fa-solid fa-pen"></i>
+                    <span>Редактировать фильтры</span>
+                </button>
+
+                <button class="delete_filters editor-only" type="button" disabled>
+                    <i class="fa-solid fa-trash-can"></i>
+                    <span>Удалить выбранные</span>
+                </button>
+            </div>
         </div>
         <div class="header-actions">
             <button class="add_new_event editor-only" type="button"><i class="fa-solid fa-plus"></i> Добавить новое событие</button>
@@ -104,11 +120,6 @@ const SUPABASE_KEY = 'sb_publishable_4V_r__hBqiFfF31cJoQxOA_7I2UDG3u';
 const EDITOR_ID = '56016880-7cbe-4527-8ece-41ad2dd26da0';
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const BASE_FILTERS = [
-    'Общее', 'Дурин', 'Лоэн', 'Боль', 'А потом они потрахались',
-    'Семейное', 'Ванилька', 'Сяо', 'Альбедо', 'Странник',
-    'Монд', 'Ли Юэ', 'Нод-Край'
-];
 
 let events = [];
 let tags = [];
@@ -117,6 +128,8 @@ let currentUser = null;
 let editingEvent = null;
 let selectedTagNames = [];
 let draggedId = null;
+let filterEditMode = false;
+let selectedFilterTagIds = new Set();
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -169,11 +182,42 @@ function closeAllOverlays() {
 }
 
 function allKnownTagNames() {
-    const result = [];
-    [...BASE_FILTERS, ...tags.map((tag) => tag.name)].forEach((name) => {
-        if (!result.some((saved) => sameTag(saved, name))) result.push(name);
-    });
-    return result;
+    return tags.map((tag) => tag.name);
+}
+
+function updateFilterEditorControls() {
+    document.body.classList.toggle('filter-editing', filterEditMode);
+
+    const editButton = $('.edit_filters');
+    const deleteButton = $('.delete_filters');
+
+    if (!editButton || !deleteButton) return;
+
+    const editIcon = editButton.querySelector('i');
+    const editText = editButton.querySelector('span');
+
+    if (filterEditMode) {
+        editIcon.className = 'fa-solid fa-check';
+        editText.textContent = 'Готово';
+    } else {
+        editIcon.className = 'fa-solid fa-pen';
+        editText.textContent = 'Редактировать фильтры';
+    }
+
+    deleteButton.disabled = selectedFilterTagIds.size === 0;
+}
+
+function toggleFilterEditSelection(tagId) {
+    const key = String(tagId);
+
+    if (selectedFilterTagIds.has(key)) {
+        selectedFilterTagIds.delete(key);
+    } else {
+        selectedFilterTagIds.add(key);
+    }
+
+    renderFilters();
+    updateFilterEditorControls();
 }
 
 function renderFilters() {
@@ -181,33 +225,129 @@ function renderFilters() {
     filters.innerHTML = '';
 
     const all = document.createElement('li');
-    all.className = `filter_tag${isAllTimelineView() ? ' active' : ''}`;
+    all.className = `filter_tag filter-system${isAllTimelineView() && !filterEditMode ? ' active' : ''}`;
     all.dataset.filter = '__all__';
     all.textContent = 'вся хронология';
+
     all.addEventListener('click', () => {
+        if (filterEditMode) return;
+
         activeFilters = [];
         renderFilters();
         renderEvents();
     });
+
     filters.appendChild(all);
 
-    allKnownTagNames().forEach((name) => {
+    tags.forEach((tag) => {
         const item = document.createElement('li');
-        const active = activeFilters.some((filter) => sameTag(filter, name));
-        item.className = `filter_tag${active ? ' active' : ''}`;
-        item.dataset.filter = name;
-        item.textContent = name.toLowerCase();
-        item.addEventListener('click', () => {
-            if (activeFilters.some((filter) => sameTag(filter, name))) {
-                activeFilters = activeFilters.filter((filter) => !sameTag(filter, name));
-            } else {
-                activeFilters.push(name);
-            }
-            renderFilters();
-            renderEvents();
-        });
+        const active = activeFilters.some((filter) => sameTag(filter, tag.name));
+        const checked = selectedFilterTagIds.has(String(tag.id));
+
+        item.className = `filter_tag${active && !filterEditMode ? ' active' : ''}${filterEditMode ? ' is-editable' : ''}${checked ? ' is-checked' : ''}`;
+        item.dataset.filter = tag.name;
+        item.dataset.tagId = tag.id;
+
+        if (filterEditMode) {
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'filter-checkbox';
+            checkbox.checked = checked;
+            checkbox.setAttribute('aria-label', `Выбрать тег ${tag.name} для удаления`);
+
+            checkbox.addEventListener('click', (eventObject) => {
+                eventObject.stopPropagation();
+            });
+
+            checkbox.addEventListener('change', () => {
+                toggleFilterEditSelection(tag.id);
+            });
+
+            const text = document.createElement('span');
+            text.textContent = tag.name.toLowerCase();
+
+            item.appendChild(checkbox);
+            item.appendChild(text);
+
+            item.addEventListener('click', () => {
+                toggleFilterEditSelection(tag.id);
+            });
+        } else {
+            item.textContent = tag.name.toLowerCase();
+
+            item.addEventListener('click', () => {
+                if (activeFilters.some((filter) => sameTag(filter, tag.name))) {
+                    activeFilters = activeFilters.filter((filter) => !sameTag(filter, tag.name));
+                } else {
+                    activeFilters.push(tag.name);
+                }
+
+                renderFilters();
+                renderEvents();
+            });
+        }
+
         filters.appendChild(item);
     });
+
+    updateFilterEditorControls();
+}
+
+async function deleteSelectedFilters() {
+    if (!isEditor() || !filterEditMode) return;
+
+    const selectedTags = tags.filter((tag) => selectedFilterTagIds.has(String(tag.id)));
+
+    if (!selectedTags.length) {
+        showToast('Сначала отметь теги для удаления.');
+        return;
+    }
+
+    const names = selectedTags.map((tag) => `#${tag.name.toLowerCase()}`).join(', ');
+    const approved = confirm(
+        `Удалить ${selectedTags.length === 1 ? 'тег' : 'теги'} ${names}?\n\n` +
+        'Они также исчезнут у всех событий, к которым были привязаны.'
+    );
+
+    if (!approved) return;
+
+    const deleteButton = $('.delete_filters');
+    const originalHtml = deleteButton.innerHTML;
+
+    deleteButton.disabled = true;
+    deleteButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Удаляю</span>';
+
+    try {
+        const ids = selectedTags.map((tag) => tag.id);
+
+        const { error } = await supabaseClient
+            .from('tags')
+            .delete()
+            .in('id', ids);
+
+        if (error) throw error;
+
+        activeFilters = activeFilters.filter((filter) => {
+            return !selectedTags.some((tag) => sameTag(filter, tag.name));
+        });
+
+        selectedFilterTagIds.clear();
+
+        await loadTags();
+        await loadEvents();
+
+        showToast(
+            selectedTags.length === 1
+                ? 'Тег удалён.'
+                : 'Теги удалены.'
+        );
+    } catch (error) {
+        console.error(error);
+        showToast(error.message || 'Не удалось удалить теги.');
+    } finally {
+        deleteButton.innerHTML = originalHtml;
+        updateFilterEditorControls();
+    }
 }
 
 function getFilteredEvents() {
@@ -302,6 +442,12 @@ async function loadTags() {
         return;
     }
     tags = data || [];
+
+    const existingIds = new Set(tags.map((tag) => String(tag.id)));
+    selectedFilterTagIds = new Set(
+        [...selectedFilterTagIds].filter((id) => existingIds.has(String(id)))
+    );
+
     renderFilters();
 }
 
@@ -679,7 +825,14 @@ async function refreshAuth() {
     if (error) console.error(error);
 
     currentUser = data?.user || null;
+
+    if (!isEditor()) {
+        filterEditMode = false;
+        selectedFilterTagIds.clear();
+    }
+
     document.body.classList.toggle('is-editor', isEditor());
+    updateFilterEditorControls();
 
     const button = $('.login-button');
     const icon = button.querySelector('i');
@@ -757,6 +910,22 @@ $('.remove_filters').addEventListener('click', () => {
     renderFilters();
     renderEvents();
 });
+
+$('.edit_filters').addEventListener('click', () => {
+    if (!isEditor()) return;
+
+    filterEditMode = !filterEditMode;
+    selectedFilterTagIds.clear();
+
+    if (filterEditMode) {
+        activeFilters = [];
+        renderEvents();
+    }
+
+    renderFilters();
+});
+
+$('.delete_filters').addEventListener('click', deleteSelectedFilters);
 
 $('#tag-input').addEventListener('focus', showSuggestions);
 $('#tag-input').addEventListener('input', showSuggestions);

@@ -149,6 +149,87 @@ button.remove_filters {
     color: var(--accent-red);
 }
 
+.filter-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.edit_filters {
+    padding: 0;
+    font-size: 11px;
+    background: transparent;
+    border: none;
+    color: var(--accent-blue);
+}
+
+.delete_filters {
+    padding: 0;
+    font-size: 11px;
+    background: transparent;
+    border: none;
+    color: var(--accent-red);
+}
+
+.is-editor .delete_filters.editor-only {
+    display: none;
+}
+
+.is-editor.filter-editing .delete_filters.editor-only {
+    display: flex;
+}
+
+.filter-editing .remove_filters {
+    opacity: .45;
+    pointer-events: none;
+}
+
+.filter-editing .filter-system {
+    opacity: .45;
+    cursor: default;
+}
+
+.filter_tag.is-editable {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding-left: 9px;
+}
+
+.filter_tag.is-editable.is-checked {
+    background: rgba(var(--red), .13);
+    border-color: rgba(var(--red), .2);
+    color: var(--accent-red);
+}
+
+.filter-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    border: 1px solid rgba(var(--dark), .28);
+    border-radius: 4px;
+    background: rgba(var(--white), .38);
+    display: grid;
+    place-content: center;
+    cursor: pointer;
+}
+
+.filter-checkbox:checked {
+    background: rgba(var(--red), .82);
+    border-color: rgba(var(--red), .82);
+}
+
+.filter-checkbox:checked:after {
+    content: '';
+    width: 5px;
+    height: 3px;
+    border-left: 2px solid white;
+    border-bottom: 2px solid white;
+    transform: rotate(-45deg) translateY(-1px);
+}
+
 .header-actions {
     display: flex;
     align-items: center;
@@ -570,4 +651,21 @@ input[type="number"] {
 @keyframes tag-in {
     from { opacity: 0; transform: scale(.94); }
     to { opacity: 1; transform: scale(1); }
+}
+
+
+/* Режим управления тегами-фильтрами */
+.filter-actions button:before,
+.filter-checkbox:before,
+.filter-checkbox:after {
+    pointer-events: none;
+}
+
+.filter-actions button:hover {
+    transform: none;
+}
+
+.delete_filters:disabled {
+    opacity: .35;
+    cursor: default;
 }
