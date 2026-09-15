@@ -821,10 +821,15 @@ async function reorderByDrop(draggedEventId, targetEventId) {
 }
 
 async function refreshAuth() {
-    const { data, error } = await supabaseClient.auth.getUser();
+    /*
+     * Берём уже сохранённую сессию из браузера.
+     * В отличие от getUser(), это не заставляет сайт ждать
+     * сетевой запрос к /auth/v1/user при каждой загрузке страницы.
+     */
+    const { data, error } = await supabaseClient.auth.getSession();
     if (error) console.error(error);
 
-    currentUser = data?.user || null;
+    currentUser = data?.session?.user || null;
 
     if (!isEditor()) {
         filterEditMode = false;
@@ -940,9 +945,16 @@ $('#tag-input').addEventListener('keydown', (e) => {
 });
 
 (async function init() {
+    /*
+     * Публичные данные грузим сразу и параллельно.
+     * Авторизация больше не держит весь таймлайн в состоянии «Загрузка...».
+     */
+    await Promise.all([
+        loadTags(),
+        loadEvents()
+    ]);
+
     await refreshAuth();
-    await loadTags();
-    await loadEvents();
 
     supabaseClient.auth.onAuthStateChange(async () => {
         await refreshAuth();
