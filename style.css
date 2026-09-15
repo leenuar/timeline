@@ -623,6 +623,7 @@ input[type="number"] {
     display: flex;
     justify-content: space-between;
     gap: 10px;
+    flex-direction: row-reverse;
 }
 
 #toast {
